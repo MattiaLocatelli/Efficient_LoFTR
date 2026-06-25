@@ -52,6 +52,9 @@ online_img_pth = "Online_Keyframe/R1257.png"
 offline_folder = "Offline_Keyframes_Turn2-3/"
 offline_imgs = [f for f in os.listdir(offline_folder) if f.endswith('.png')]
 
+output_dir = "output_matches"
+os.makedirs(output_dir, exist_ok=True)
+
 # 2. Caricamento immagine online (una volta sola)
 img0_raw = cv2.imread(online_img_pth, cv2.IMREAD_GRAYSCALE)
 target_w, target_h = 960, 256 #almost half the original size (1920x500)
@@ -111,7 +114,11 @@ for img_name in offline_imgs:
     text = ['LoFTR', 'Matches: {}'.format(len(mkpts0_filtered))]
     fig = make_matching_figure(img0_raw, img1_raw, mkpts0_filtered, mkpts1_filtered, color_filtered, text=text)
     
+    save_path = os.path.join(output_dir, f"match_{img_name}")
+    fig.savefig(save_path, bbox_inches='tight', dpi=150)
+    
+    plt.close(fig)
+    
     print(f"Keyframe: {img_name} | Matches: {len(mkpts0_filtered)} | Inf Time {inference_time:.3f}ms")
-    plt.show()
 
 print(f"Mean Inference Time: {np.mean(inference_times):.3f}")
