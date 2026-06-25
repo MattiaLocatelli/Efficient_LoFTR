@@ -10,3 +10,9 @@ tmp.*
 logs/
 weights/
 dump/
+
+ELOFTR/
+checkpoint/
+Offline_Keyframes/
+Online_Keyframe/
+Offline_Keyframes_Turn2-3
