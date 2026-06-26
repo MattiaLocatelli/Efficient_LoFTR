@@ -1,6 +1,7 @@
 import os
 # os.chdir("..")
 from copy import deepcopy
+import csv
 import time
 
 import torch
@@ -54,6 +55,7 @@ offline_imgs = [f for f in os.listdir(offline_folder) if f.endswith('.png')]
 
 output_dir = "output_matches_fp16"
 os.makedirs(output_dir, exist_ok=True)
+csv_path = os.path.join(output_dir, "matching_stats.csv")
 
 # 2. Online frame load
 img0_raw = cv2.imread(online_img_pth, cv2.IMREAD_GRAYSCALE)
@@ -69,6 +71,7 @@ else:
 inference_times = []
 confidences = []
 inliers_number = []
+csv_rows = []
 
 # 3. Matching pipeline
 for img_name in offline_imgs:
@@ -108,8 +111,10 @@ for img_name in offline_imgs:
     mconf = batch['mconf'].cpu().numpy()
 
     # Draw
+    raw_mconf_max = None
     if model_type == 'opt':
-        print(mconf.max())
+        raw_mconf_max = float(mconf.max())
+        print(raw_mconf_max)
         mconf = (mconf - min(20.0, mconf.min())) / (max(30.0, mconf.max()) - min(20.0, mconf.min()))
     
     color = cm.jet(mconf)
@@ -137,6 +142,54 @@ for img_name in offline_imgs:
     
     print(f"Keyframe: {img_name} | Matches: {len(mkpts0_filtered)} | Inf Time {inference_time:.3f}ms")
 
+    csv_rows.append({
+        "image_name": img_name,
+        "raw_mconf_max": raw_mconf_max,
+        "mconf_min": float(mconf.min()),
+        "mconf_max": float(mconf.max()),
+        "mconf_mean": float(mconf.mean()),
+        "matches": int(len(mkpts0_filtered)),
+        "inference_time_ms": float(inference_time),
+        "threshold": float(threshold),
+    })
+
+summary_rows = [
+    {
+        "image_name": "__summary__",
+        "raw_mconf_max": None,
+        "mconf_min": None,
+        "mconf_max": None,
+        "mconf_mean": float(np.mean(confidences)) if confidences else None,
+        "matches": None,
+        "inference_time_ms": float(sum(inference_times[1:])/(len(inference_times)-1)) if len(inference_times) > 1 else None,
+        "threshold": float(threshold),
+        "mean_inliers": float(np.mean(inliers_number)) if inliers_number else None,
+        "note": f"Mean Number Inliers with confidence > {threshold}",
+    }
+]
+
+fieldnames = [
+    "image_name",
+    "raw_mconf_max",
+    "mconf_min",
+    "mconf_max",
+    "mconf_mean",
+    "matches",
+    "inference_time_ms",
+    "threshold",
+    "mean_inliers",
+    "note",
+]
+
+with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+    writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in csv_rows:
+        writer.writerow(row)
+    for row in summary_rows:
+        writer.writerow(row)
+
 print(f"Mean Inference Time: {sum(inference_times[1:])/(len(inference_times)-1):.3f}ms")
 print(f"Mean Confidence: {np.mean(confidences)}")
 print(f"Mean Number Inliers: {np.mean(inliers_number)} with confidence > {threshold}")
+print(f"Saved CSV: {csv_path}")
