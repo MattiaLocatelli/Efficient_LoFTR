@@ -16,7 +16,7 @@ from src.loftr import LoFTR, full_default_cfg, opt_default_cfg, reparameter
 model_type = 'opt' # 'full' for best quality, 'opt' for best efficiency
 
 # You can choose numerical precision in ['fp32', 'mp', 'fp16']. 'fp16' for best efficiency
-precision = 'fp32' # Enjoy near-lossless precision with Mixed Precision (MP) / FP16 computation if you have a modern GPU (recommended NVIDIA architecture >= SM_70).
+precision = 'fp16' # Enjoy near-lossless precision with Mixed Precision (MP) / FP16 computation if you have a modern GPU (recommended NVIDIA architecture >= SM_70).
 
 # You can also change the default values like thr. and npe (based on input image size)
 
@@ -47,31 +47,41 @@ if precision == 'fp16':
 
 matcher = matcher.eval().cuda()
 
-# 1. Configurazione per la pipeline
+# 1. Config
 online_img_pth = "Online_Keyframe/R1257.png"
 offline_folder = "Offline_Keyframes_Turn2-3/"
 offline_imgs = [f for f in os.listdir(offline_folder) if f.endswith('.png')]
 
-output_dir = "output_matches"
+output_dir = "output_matches_fp16"
 os.makedirs(output_dir, exist_ok=True)
 
-# 2. Caricamento immagine online (una volta sola)
+# 2. Online frame load
 img0_raw = cv2.imread(online_img_pth, cv2.IMREAD_GRAYSCALE)
 target_w, target_h = 960, 256 #almost half the original size (1920x500)
 img0_raw = cv2.resize(img0_raw, (target_w, target_h))
 img0_raw = cv2.resize(img0_raw, (img0_raw.shape[1]//32*32, img0_raw.shape[0]//32*32))
-img0 = torch.from_numpy(img0_raw)[None][None].cuda() / 255.
+
+if precision == 'fp16':
+    img0 = torch.from_numpy(img0_raw)[None][None].half().cuda() / 255.
+else:
+    img0 = torch.from_numpy(img0_raw)[None][None].cuda() / 255.
 
 inference_times = []
+confidences = []
+inliers_number = []
 
-# 3. Pipeline di matching
+# 3. Matching pipeline
 for img_name in offline_imgs:
     img1_raw = cv2.imread(os.path.join(offline_folder, img_name), cv2.IMREAD_GRAYSCALE)
     if img1_raw is None: continue
-    
-    # img1_raw = cv2.resize(img1_raw, (img1_raw.shape[1]//32*32, img1_raw.shape[0]//32*32))
+
     img1_raw = cv2.resize(img1_raw, (target_w, target_h))
-    img1 = torch.from_numpy(img1_raw)[None][None].cuda() / 255.
+        
+    # img1_raw = cv2.resize(img1_raw, (img1_raw.shape[1]//32*32, img1_raw.shape[0]//32*32))
+    if precision == 'fp16':
+        img1 = torch.from_numpy(img1_raw)[None][None].half().cuda() / 255.
+    else:
+        img1 = torch.from_numpy(img1_raw)[None][None].cuda() / 255.
     
     batch = {'image0': img0, 'image1': img1}
     
@@ -82,8 +92,11 @@ for img_name in offline_imgs:
     start_event.record()
     
     with torch.no_grad():
-        matcher(batch)
-        
+        if precision == 'mp':
+            with torch.autocast(enabled=True, device_type='cuda'):
+                matcher(batch)
+        else:
+            matcher(batch)
         end_event.record()
     
     torch.cuda.synchronize()
@@ -111,6 +124,9 @@ for img_name in offline_imgs:
     mkpts1_filtered = mkpts1[mask]
     color_filtered = color[mask]
     
+    confidences.append(mconf.mean())
+    inliers_number.append(len(mkpts0_filtered))
+    
     text = ['LoFTR', 'Matches: {}'.format(len(mkpts0_filtered))]
     fig = make_matching_figure(img0_raw, img1_raw, mkpts0_filtered, mkpts1_filtered, color_filtered, text=text)
     
@@ -121,4 +137,6 @@ for img_name in offline_imgs:
     
     print(f"Keyframe: {img_name} | Matches: {len(mkpts0_filtered)} | Inf Time {inference_time:.3f}ms")
 
-print(f"Mean Inference Time: {np.mean(inference_times):.3f}")
+print(f"Mean Inference Time: {sum(inference_times[1:])/(len(inference_times)-1):.3f}ms")
+print(f"Mean Confidence: {np.mean(confidences)}")
+print(f"Mean Number Inliers: {np.mean(inliers_number)} with confidence > {threshold}")
