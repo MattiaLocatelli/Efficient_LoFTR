@@ -17,7 +17,7 @@ from src.loftr import LoFTR, full_default_cfg, opt_default_cfg, reparameter
 model_type = 'opt' # 'full' for best quality, 'opt' for best efficiency
 
 # You can choose numerical precision in ['fp32', 'mp', 'fp16']. 'fp16' for best efficiency
-precision = 'fp16' # Enjoy near-lossless precision with Mixed Precision (MP) / FP16 computation if you have a modern GPU (recommended NVIDIA architecture >= SM_70).
+precision = 'fp32' # Enjoy near-lossless precision with Mixed Precision (MP) / FP16 computation if you have a modern GPU (recommended NVIDIA architecture >= SM_70).
 
 # You can also change the default values like thr. and npe (based on input image size)
 
@@ -53,9 +53,9 @@ online_img_pth = "Online_Keyframe/R1257.png"
 offline_folder = "Offline_Keyframes_Turn2-3/"
 offline_imgs = [f for f in os.listdir(offline_folder) if f.endswith('.png')]
 
-output_dir = "output_matches_fp16"
+output_dir = "output_matches_fp32"
 os.makedirs(output_dir, exist_ok=True)
-csv_path = os.path.join(output_dir, "matching_stats.csv")
+csv_path = os.path.join(output_dir, "ELoFTR_fp32_stats.csv")
 
 # 2. Online frame load
 img0_raw = cv2.imread(online_img_pth, cv2.IMREAD_GRAYSCALE)
@@ -72,6 +72,7 @@ inference_times = []
 confidences = []
 inliers_number = []
 csv_rows = []
+inliers_geometric_number = []
 
 # 3. Matching pipeline
 for img_name in offline_imgs:
@@ -129,8 +130,16 @@ for img_name in offline_imgs:
     mkpts1_filtered = mkpts1[mask]
     color_filtered = color[mask]
     
-    confidences.append(mconf.mean())
+    num_inliers = 0
+    if len(mkpts0_filtered) > 8:
+        _, inliers = cv2.findFundamentalMat(mkpts0_filtered, mkpts1_filtered, cv2.USAC_MAGSAC, 0.5, 0.999, 1000)
+        if inliers is not None:
+            num_inliers = int(np.sum(inliers))
+    
+    inliers_geometric_number.append(num_inliers)
     inliers_number.append(len(mkpts0_filtered))
+    confidences.append(mconf.mean())
+
     
     text = ['LoFTR', 'Matches: {}'.format(len(mkpts0_filtered))]
     fig = make_matching_figure(img0_raw, img1_raw, mkpts0_filtered, mkpts1_filtered, color_filtered, text=text)
@@ -144,11 +153,11 @@ for img_name in offline_imgs:
 
     csv_rows.append({
         "image_name": img_name,
-        "raw_mconf_max": raw_mconf_max,
-        "mconf_min": float(mconf.min()),
-        "mconf_max": float(mconf.max()),
-        "mconf_mean": float(mconf.mean()),
+        "conf_min": float(mconf.min()),
+        "conf_max": float(mconf.max()),
+        "conf_mean": float(mconf.mean()),
         "matches": int(len(mkpts0_filtered)),
+        "inliers": int(num_inliers),
         "inference_time_ms": float(inference_time),
         "threshold": float(threshold),
     })
@@ -156,30 +165,16 @@ for img_name in offline_imgs:
 summary_rows = [
     {
         "image_name": "__summary__",
-        "raw_mconf_max": None,
-        "mconf_min": None,
-        "mconf_max": None,
-        "mconf_mean": float(np.mean(confidences)) if confidences else None,
-        "matches": None,
-        "inference_time_ms": float(sum(inference_times[1:])/(len(inference_times)-1)) if len(inference_times) > 1 else None,
+        "conf_mean": float(np.mean(confidences)),
+        "matches": float(np.mean(inliers_number)),
+        "inliers": float(np.mean(inliers_geometric_number)),
+        "inference_time_ms": float(sum(inference_times[1:])/(len(inference_times)-1)),
         "threshold": float(threshold),
-        "mean_inliers": float(np.mean(inliers_number)) if inliers_number else None,
-        "note": f"Mean Number Inliers with confidence > {threshold}",
+        "note": "Mean values",
     }
 ]
 
-fieldnames = [
-    "image_name",
-    "raw_mconf_max",
-    "mconf_min",
-    "mconf_max",
-    "mconf_mean",
-    "matches",
-    "inference_time_ms",
-    "threshold",
-    "mean_inliers",
-    "note",
-]
+fieldnames = ["image_name", "conf_min", "conf_max", "conf_mean", "matches", "inliers", "inference_time_ms", "threshold", "note"]
 
 with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
