@@ -81,7 +81,7 @@ def shortest_angular_distance_deg(angle_a, angle_b):
     return np.degrees(np.arctan2(np.sin(angle_a - angle_b), np.cos(angle_a - angle_b)))
 
 # You can choose model type in ['full', 'opt']
-model_type = 'opt' # 'full' for best quality, 'opt' for best efficiency
+model_type = 'full' # 'full' for best quality, 'opt' for best efficiency
 
 # You can choose numerical precision in ['fp32', 'mp', 'fp16']. 'fp16' for best efficiency
 precision = 'fp16' # Enjoy near-lossless precision with Mixed Precision (MP) / FP16 computation if you have a modern GPU (recommended NVIDIA architecture >= SM_70).
@@ -120,9 +120,9 @@ online_img_pth = "Online_Keyframe/R1257.png"
 offline_folder = "Offline_Keyframes_Turn2-3/"
 offline_imgs = [f for f in os.listdir(offline_folder) if f.endswith('.png')]
 
-output_dir = "output_matches_fp16"
+output_dir = "output_matches_fp32"
 os.makedirs(output_dir, exist_ok=True)
-csv_path = os.path.join(output_dir, "ELoFTR_fp16_stats.csv")
+csv_path = os.path.join(output_dir, "ELoFTR_fp32_stats.csv")
 
 # 2. Online frame load
 img0_raw = cv2.imread(online_img_pth, cv2.IMREAD_GRAYSCALE)
@@ -352,11 +352,11 @@ summary_rows = [
         "inliers": float(np.mean(inliers_geometric_number)),
         "inference_time_ms": float(sum(inference_times[1:])/(len(inference_times)-1)),
         "threshold": float(threshold),
-        "roll_error_deg": float(np.mean([row["roll_error_deg"] for row in csv_rows])),
-        "pitch_error_deg": float(np.mean([row["pitch_error_deg"] for row in csv_rows])),
-        "yaw_error_deg": float(np.mean([row["yaw_error_deg"] for row in csv_rows])),
-        "trans_error_deg": float(np.mean([row["trans_error_deg"] for row in csv_rows])),
-        "note": "Mean values",
+        "roll_error_deg": float(np.mean(np.abs([row["roll_error_deg"] for row in csv_rows]))),
+        "pitch_error_deg": float(np.mean(np.abs([row["pitch_error_deg"] for row in csv_rows]))),
+        "yaw_error_deg": float(np.mean(np.abs([row["yaw_error_deg"] for row in csv_rows]))),
+        "trans_error_deg": float(np.mean(np.abs([row["trans_error_deg"] for row in csv_rows]))),
+        "note": "Mean absolute values",
     },
     {
         "image_name": "__summary__",
@@ -367,11 +367,11 @@ summary_rows = [
         "inliers": float(np.std(inliers_geometric_number)),
         "inference_time_ms": float(np.std(sum(inference_times[1:])/(len(inference_times)-1))**2),
         "threshold": float(threshold),
-        "roll_error_deg": float(np.mean(np.abs([row["roll_error_deg"] for row in csv_rows]))),
-        "pitch_error_deg": float(np.mean(np.abs([row["pitch_error_deg"] for row in csv_rows]))),
-        "yaw_error_deg": float(np.mean(np.abs([row["yaw_error_deg"] for row in csv_rows]))),
-        "trans_error_deg": float(np.mean(np.abs([row["trans_error_deg"] for row in csv_rows]))),
-        "note": "Mean absolute values",
+        "roll_error_deg": float(np.std([row["roll_error_deg"] for row in csv_rows])**2),
+        "pitch_error_deg": float(np.std([row["pitch_error_deg"] for row in csv_rows])**2),
+        "yaw_error_deg": float(np.std([row["yaw_error_deg"] for row in csv_rows])**2),
+        "trans_error_deg": float(np.std([row["trans_error_deg"] for row in csv_rows])**2),
+        "note": "Variance values",
     }
 ]
 
